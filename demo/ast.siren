@@ -1,0 +1,300 @@
+commands @ is
+  cmd scene is
+    arg background of word
+    arg camera of enum with ui
+    arg mouse of enum with show, hide
+    block is cmds scene-cmds with layers, slots, slot-ids, str-consts, scripts
+    list-of layers
+    list-of slots
+    index slot-ids on id is
+      duplicate "duplicate slot id '{id}' in scene"
+    end
+    index scripts on id is
+      duplicate "duplicate script id '{id}' in scene"
+    end
+    index str-consts on text is
+      generate-id id from "str-{count}" not-in slot-ids -- FIXME: temp-slots
+    end
+    -- view-of-list public-slots from slots with public=true
+  end
+end
+
+commands scene-cmds is
+  cmd slot add-to slot-ids, slots is
+    direct id of word
+    arg type of word required
+    arg name of text
+    arg text of text
+    arg new of enum with map
+    arg public of flag
+    arg value of number
+  end
+  cmd layer add-to layers is
+    block is cmds layer-cmds with frame-ids, slot-ids, str-consts, scripts add-to frames, frame-ids
+    direct id of word
+    arg name of text required
+    arg mode of enum with ui
+    arg visible of flag
+    arg locked of flag
+    list-of frames
+    index frame-ids on id is
+      duplicate "duplicate frame id '{id}' in scene"
+    end
+  end
+  cmd script add-to scripts is
+    block is cmds action-cmds with layers, slot-ids, str-consts, scripts, temp-slots add-to actions
+    direct id of word alias script-id
+    arg name of text required
+    list-of actions
+    index temp-slots on id is
+      assert id not-in slot-ids or "temporary name '{id}' conflicts with a scene-slot name, in script {script-id}"
+      merge-on type or "cannot re-use the temporary '{id}' with a different type, in script {script-id}"
+      duplicate "cannot re-use the temporary '{id}' in script {script-id}"
+    end
+  end
+end
+
+commands layer-cmds is
+  cmd frame is
+    direct id of word
+    arg left of slot-and-ofs required
+    arg top of slot-and-ofs required
+    arg right of slot-and-ofs required
+    arg bottom of slot-and-ofs required
+    block is cmds layer-cmds with frame-ids, slot-ids, scripts add-to frames, frame-ids
+    list-of frames
+  end
+  cmd image-frame is
+    direct id of word
+    arg asset of word required
+    arg shape of word
+    arg left of slot-and-ofs required
+    arg top of slot-and-ofs required
+  end
+  cmd nine-patch is
+    direct id of word
+    arg asset of word required
+    arg shape of word required
+    arg left of slot-and-ofs required
+    arg top of slot-and-ofs required
+    arg right of slot-and-ofs required
+    arg bottom of slot-and-ofs required
+  end
+  cmd frame-host is
+    direct id of word
+    arg panel of word required
+    arg left of slot-and-ofs required
+    arg top of slot-and-ofs required
+    arg right of slot-and-ofs required
+    arg bottom of slot-and-ofs required
+  end
+  cmd tab-strip is
+    direct id of word
+    arg of of word required
+    arg left of slot-and-ofs required
+    arg top of slot-and-ofs required
+    arg right of slot-and-ofs required
+    arg bottom of slot-and-ofs required
+    block is cmds tab-strip-cmds add-to tabs
+    list-of tabs
+  end
+  cmd use-frame is
+    direct id of word
+    arg part of word required
+    arg left of slot-and-ofs required
+    arg top of slot-and-ofs required
+    arg right of slot-and-ofs required
+    arg bottom of slot-and-ofs required
+  end
+end
+
+commands tab-strip-cmds is
+  cmd tab is
+    direct id of word
+    arg width of number required
+    arg label of text required
+    arg spawn of word
+    arg with of key-value-map -- required if spawn
+  end
+end
+
+-- for these cmd-defs, the inner commands declare parsing steps, mostly.
+-- but this is essentially what commands do already, 
+-- and cmd could also support 'from [field]' and 'yield' [field-set]
+-- so these are commands used to parse one argument value.
+-- NB. these can [appear to] access collections visible only to the caller.
+
+argument as-temp-inst from slot is -- not deferred
+  direct id of word
+  assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a slot name" -- deferred on slot-ids
+  add-to temp-slots a temp-slot with id=id, type=inst as slot or "duplicate temp-slot '{id}' in this scope" -- not deferred (because it adds)
+end
+argument as-temp-str from slot is -- not deferred
+  direct id of word
+  assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a slot name" -- deferred on slot-ids
+  add-to temp-slots a temp-slot with id=id, type=str as slot or "duplicate temp-slot '{id}' in this scope" -- not deferred (because it adds)
+end
+argument str-slot from slot is -- deferred on slot
+  direct id of word
+  resolve id in slot-ids as slot or "slot '{id}' not found in this scope" -- deferred on slot-ids
+  assert-field type of slot is str or "slot '{id}' must be a string slot" -- deferred on slot (after slot-ids)
+end
+argument num-slot from slot is -- deferred on slot
+  direct id of word
+  resolve id in slot-ids as slot or "slot '{id}' not found in this scope" -- deferred on slot-ids
+  assert-field type of slot is num or "slot '{id}' must be a number slot" -- deferred on slot (after slot-ids)
+end
+argument menu-index is
+  direct menu of number
+  expect ":"
+  direct index of number
+end
+argument slot-and-ofs is
+  direct slot of num-slot -- TODO: anchor or num-slot ?
+  match "+" one-of pm is
+    direct ofs of number
+  end
+  match "-" one-of pm is
+    direct ofs of number
+    negate ofs
+  end
+end
+argument str-ref from slot is
+  match-token text as value one-of tw is -- local namespace for one-of.
+    add-to str-consts merge a str-lit with text=value as slot -- text is the unique key; merge duplicates.
+  end
+  match-token word as id one-of tw is
+    resolve id in slot-ids, temp-slots as slot or "slot '{id}' not found in this scope" -- deferred on slot-ids AND temp-slots.
+    assert-field type of slot is str or "slot '{id}' is not a string" -- deferred on slot.
+  end
+end
+
+-- for these cmd-defs, the inner commands declare arguments and resolve steps,
+-- which are declarative (resolve steps are performed in topological order)
+
+-- there's no point just parsing stuff and making Lua do the rest later;
+-- collections, filtered views, merge/conflict rules, resolve-in, assertions, etc.
+
+commands action-cmds is
+  cmd this-ref is
+    arg as of as-temp-inst required
+  end
+  cmd add-menu is
+    direct menu of number
+    arg name of str-ref required
+  end
+  cmd add-menu-sep is
+    direct menu of menu-index
+  end
+  cmd add-menu-item is
+    direct menu of menu-index
+    arg name of str-ref required
+    arg entry of word
+    arg key of text
+    arg command of flag
+    arg option of flag
+    arg shift of flag
+    resolve entry in scripts or "entry '{id}' not found in this scene"
+  end
+  cmd format-text is
+    direct fmt of text -- TODO: of text-template
+    arg as of as-temp-str unless to
+    arg to of str-slot unless as
+  end
+  cmd read-json is
+    direct filename of str-ref
+    arg as of as-temp-str unless to
+    arg to of str-slot unless as
+  end
+  cmd read-from is
+    direct from of inst-ref
+    arg of of tpl-ref as tpl required
+    -- comma separated list of its sub-command tuples:
+    list-arg read is
+      direct src of word
+      resolve src in tpl.public-slots -- must change the meaning of 'src' (no longer a 'word')
+      match "as" one-of as-to is
+        -- it would be good if the temp-slots collection captured the constraints:
+        -- assert not-in slot-ids and assert same type for id, or new temp-slot.
+        -- also provide error messages for these cases in one place.
+        direct dest of word
+        resolve dest in temp-slots with type=src.type -- changes the meaning of 'dest'
+      end
+      match "to" one-of as-to is
+        direct dest of word
+        resolve dest in public-slots with type=src.type or "the type of the to-slot '{dest}' does not match the type of the source slot '{src.id}'"
+        -- ^ {src} is resolved because we depend on src.type, but {dest} is not resolved yet.
+      end
+    end
+  end
+  cmd write-to is
+    direct to of inst-ref
+    arg of of tpl-ref as tpl required
+    arg write of write-slots-map required -- TODO: need to resolve the pairs.
+  end
+  cmd read-from-data is
+    direct from of data-ref
+    arg read of name-as-to-map required -- TODO: need types -> write to temps or slots.
+  end
+  cmd write-to-data is
+    direct to of data-ref
+    arg write of key-value-map required -- TODO: need data types <- read from temps or slots.
+  end
+  cmd assert-ref is
+    direct slot of inst-ref
+    arg or of text required
+  end
+  cmd each-data is
+    direct slot of data-ref
+    arg as of as-temp-data required
+    block do cmds action-cmds add-to actions with slot-ids, scripts, temp-slots, str-consts
+    list-of actions
+  end
+  cmd add-counter is
+    direct slot of to-int-slot
+    arg add of number required
+  end
+  cmd spawn is
+    direct tpl of tpl-ref
+    arg into of word as group -- required unless as, to
+    arg as of word -- required unless to, into
+    arg to of word -- required unless as, into
+    arg with of key-value-map as args
+  end
+  cmd spawn-frame is
+    direct tpl of tpl-ref
+    arg into of word as group -- required unless as, to
+    arg as of word -- required unless to, into
+    arg to of word -- required unless as, into
+    arg with of key-value-map as args
+  end
+  cmd if is
+    -- FIXME: modular conditions require [recursive] args from a command-set...
+    direct condition of word
+    arg key of number -- for 'key-was-pressed'
+    arg in of word -- for 'no-inst'
+    block do cmds action-cmds with slot-ids, scripts, temp-slots, str-consts
+    list-of actions
+  end
+  cmd do-entry is
+    direct entry of word
+    arg in of inst-ref as inst
+    arg of of tpl-ref as tpl
+    resolve entry in tpl.scripts or "entry '{id}' not found in template '{tpl.id}'"
+  end
+  cmd choose-files is
+    direct dir of word
+    arg as of word required
+    block do cmds action-cmds with slot-ids, scripts, temp-slots, str-consts
+    list-of actions
+  end
+  cmd queue-inst is
+    direct inst of word
+    arg for of enum-set as bits with dirty
+  end
+  cmd copy-text is
+    direct from of word
+    arg to of word required
+  end
+
+end
