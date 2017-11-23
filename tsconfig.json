@@ -1,0 +1,17 @@
+{
+    "files": [
+        "src/siren.ts"
+    ],
+    "compilerOptions": {
+        "alwaysStrict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "noImplicitThis": true,
+        "noUnusedLocals": true,
+        "target": "es6",
+        "module": "commonjs",
+        "outDir": "lib",
+        "pretty": false
+    }
+}
