@@ -216,7 +216,7 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('with'), is: sym('word-list') }) // collections to pass to commands.
       ]),
       collections: ind([]),
-      bindToArg: sym('block'),
+      'bind-to-arg': sym('block')
     }),
 
     cmd('arg', {
@@ -283,7 +283,8 @@ export const metaCmds = indexify('cmd-sets', [
       ]),
       args: ind([]),
       collections: ind([]),
-      bindToArg: sym('duplicate')
+      'yield-from': sym('message'),
+      'bind-to-arg': sym('duplicate')
     }),
 
     cmd('merge-on', {

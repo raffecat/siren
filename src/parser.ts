@@ -224,18 +224,26 @@ export class Parser {
       this.run_ops(context, tuple, cmdDef.ops);
     }
 
+    // yield the result tuple or value.
+    let cmdResult: ValueNode = tuple;
+    const yieldFrom = cmdDef.yieldFrom;
+    if (yieldFrom) {
+      const result = tuple.get(yieldFrom);
+      if (result == null) {
+        return this.parse_error(`panic: yield-from field ${yieldFrom} is missing from the result tuple`);
+      }
+      cmdResult = result;
+    }
+
     // bindToArg: add the command result to the parent tuple (e.g. 'block' directive)
     const bindToArg = cmdDef.bindToArg
     if (bindToArg) {
       const parentTuple = context.tuple;
       if (parentTuple == null) return this.parse_error('panic: bindToArg: not inside a parent command');
-      if (!parentTuple.add(bindToArg, tuple)) {
+      if (!parentTuple.add(bindToArg, cmdResult)) {
         return this.parse_error(`more than one '${command}' directive`);
       }
     }
-
-    // yield the result tuple or value.
-    let cmdResult = tuple;
 
     if (cmdDef.notIn) {
       this.not_in_collections(context, cmdDef.notIn, tuple, false);
@@ -254,17 +262,41 @@ export class Parser {
       if (argSpec.type === '@ParamProto') {
         // direct [as] of [spec]
         context.inArgument = argSpec.as; // update error reporting state.
-        if (!tuple.add(argSpec.as, this.parse_spec(context, argSpec, argSpec.as))) {
+        const value = this.parse_spec(context, argSpec, argSpec.as);
+        if (!tuple.add(argSpec.as, value)) {
           return this.parse_error(`duplicate field '${argSpec.as}'`);
         }
-      } else if (argSpec.type === '@MatchText') {
-        // match [text]
+      } else if (argSpec.type === '@Expect') {
+        // expect [text]
         this.skip_space();
         const pattern = argSpec.text; // TODO: make a regex at parse-time.
         if (this.text.indexOf(pattern, this.start) === this.start) {
           return this.parse_error(`expecting '${pattern}'`);
         }
         this.start += pattern.length;
+      } else if (argSpec.type === '@MatchText') {
+        // match [text] as [name] one-of [sym] is ...direct... end
+        this.skip_space();
+        const pattern = argSpec.text; // TODO: make a regex at parse-time.
+        if (this.text.indexOf(pattern, this.start) === this.start) {
+          this.start += pattern.length;
+          if (argSpec.as) {
+            if (!tuple.add(argSpec.as, new TextNode(pattern))) {
+              return this.parse_error(`duplicate field '${argSpec.as}'`);
+            }
+          }
+          console.log('@MatchText: match the direct pattern and perform the ops.');
+          this.parse_direct_args(context, tuple, argSpec.direct, `match-text:${argSpec.as}`);
+          if (argSpec.ops) {
+            this.run_ops(context, tuple, argSpec.ops);
+          }
+        }
+      } else if (argSpec.type === '@MatchToken') {
+        // match [word|text|number] as [name] one-of [sym] is ...direct... end
+        console.log('\n@MatchToken: TODO.\n');
+      } else if (argSpec.type === '@MatchList') {
+        // match [word|text|number] as [name] one-of [sym] is ...direct... end
+        console.log('\n@MatchList: TODO.\n');
       } else {
         assertNever(argSpec); // compile error if there are any missing cases.
       }
@@ -422,7 +454,7 @@ export class Parser {
   }
 
   parse_number() {
-    const text = this.consume(/-?\d+(?:\.\d+(?:[eE][+-]?\d+))/gy);
+    const text = this.consume(/-?\d+(?:\.\d+(?:[eE][+-]?\d+)?)?/gy);
     if (!text) return this.parse_error('expecting a number');
     return parseInt(text, 10);
   }

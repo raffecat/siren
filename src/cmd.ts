@@ -140,7 +140,7 @@ export class BlockProto {
   constructor(tuple: TupleNode) {
     this.token = as_str(tuple.get('token'));
     this.cmds = as_str(tuple.get('cmds'));
-    this.with = as_str_array(tuple.get('with'));
+    this.with = tuple.has('with') ? as_str_array(tuple.get('with')) : [];
     this.addTo = tuple.has('add-to') ? as_str_array(tuple.get('add-to')) : [];
   }
 }
