@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+require('source-map-support').install();
+require('../lib/siren').command(Array.prototype.slice.call(process.argv,2));

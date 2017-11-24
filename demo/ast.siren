@@ -126,23 +126,25 @@ end
 
 argument as-temp-inst from slot is -- not deferred
   direct id of word
-  assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a slot name" -- deferred on slot-ids
-  add-to temp-slots a temp-slot with id=id, type=inst as slot or "duplicate temp-slot '{id}' in this scope" -- not deferred (because it adds)
+  assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a local slot name"
+  resolve id in temp-slots as slot insert id=id, type=inst
+  assert slot.type is-sym inst or "temporary '{id}' used for type 'inst' already has type '{slot.type}'"
 end
 argument as-temp-str from slot is -- not deferred
   direct id of word
-  assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a slot name" -- deferred on slot-ids
-  add-to temp-slots a temp-slot with id=id, type=str as slot or "duplicate temp-slot '{id}' in this scope" -- not deferred (because it adds)
+  assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a local slot name"
+  resolve id in temp-slots as slot insert id=id, type=str
+  assert slot.type is-sym str or "temporary '{id}' used for type 'str' already has type '{slot.type}'"
 end
-argument str-slot from slot is -- deferred on slot
+argument str-slot from slot is -- depends on slot
   direct id of word
-  resolve id in slot-ids as slot or "slot '{id}' not found in this scope" -- deferred on slot-ids
-  assert-field type of slot is str or "slot '{id}' must be a string slot" -- deferred on slot (after slot-ids)
+  resolve id in slot-ids as slot or "slot '{id}' is not a local slot name" -- depends on slot-ids
+  assert slot.type is-sym str or "local slot '{id}' is of type '{slot.type}' and cannot be used for type 'str'" -- depends on slot (after slot-ids)
 end
-argument num-slot from slot is -- deferred on slot
+argument num-slot from slot is -- depends on slot
   direct id of word
-  resolve id in slot-ids as slot or "slot '{id}' not found in this scope" -- deferred on slot-ids
-  assert-field type of slot is num or "slot '{id}' must be a number slot" -- deferred on slot (after slot-ids)
+  resolve id in slot-ids as slot or "slot '{id}' is not a local slot name" -- depends on slot-ids
+  assert slot.type is-sym num or "local slot '{id}' is of type '{slot.type}' and cannot be used for type 'num'" -- depends on slot (after slot-ids)
 end
 argument menu-index is
   direct menu of number
@@ -156,16 +158,16 @@ argument slot-and-ofs is
   end
   match "-" one-of pm is
     direct ofs of number
-    negate ofs
+    -- TODO: negate ofs
   end
 end
 argument str-ref from slot is
-  match-token text as value one-of tw is -- local namespace for one-of.
-    add-to str-consts merge a str-lit with text=value as slot -- text is the unique key; merge duplicates.
+  match-token text as value one-of opts is -- local namespace for one-of.
+    resolve text in str-consts as slot insert text=value -- text is the index key.
   end
-  match-token word as id one-of tw is
-    resolve id in slot-ids, temp-slots as slot or "slot '{id}' not found in this scope" -- deferred on slot-ids AND temp-slots.
-    assert-field type of slot is str or "slot '{id}' is not a string" -- deferred on slot.
+  match-token word as id one-of opts is
+    resolve id in slot-ids, temp-slots as slot or "reference to '{id}' is not a local slot name or temporary" -- deferred on slot-ids AND temp-slots.
+    assert slot.type is-sym str or "slot '{id}' is not a string" -- deferred on slot.
   end
 end
 
@@ -212,18 +214,20 @@ commands action-cmds is
     -- comma separated list of its sub-command tuples:
     list-arg read is
       direct src of word
-      resolve src in tpl.public-slots -- must change the meaning of 'src' (no longer a 'word')
-      match "as" one-of as-to is
+      resolve src in tpl.public-slots as src-slot
+      match "as" one-of opts is
         -- it would be good if the temp-slots collection captured the constraints:
         -- assert not-in slot-ids and assert same type for id, or new temp-slot.
         -- also provide error messages for these cases in one place.
         direct dest of word
-        resolve dest in temp-slots with type=src.type -- changes the meaning of 'dest'
+        resolve dest in temp-slots as dest-slot insert type=src-slot.type
+        assert dest-slot.type is-eq src-slot.type or "local temporary '{dest}' does not match the type of the source slot '{src}' ('{dest-slot.type}' vs '{src-slot.type}')"
+        -- ideally the collection would already know the type (slot) to be inserted.
       end
-      match "to" one-of as-to is
+      match "to" one-of opts is
         direct dest of word
-        resolve dest in public-slots with type=src.type or "the type of the to-slot '{dest}' does not match the type of the source slot '{src.id}'"
-        -- ^ {src} is resolved because we depend on src.type, but {dest} is not resolved yet.
+        resolve dest in slot-ids as dest-slot
+        assert dest-slot.type is-eq src-slot.type or "local slot '{dest}' does not match the type of the source slot '{src}' ('{dest-slot.type}' vs '{src-slot.type}')"
       end
     end
   end

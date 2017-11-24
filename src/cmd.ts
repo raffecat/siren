@@ -11,25 +11,32 @@ function error(msg: string): never {
   throw new Error(msg);
 }
 
-function as_tuple(value: ValueNode|undefined) {
+function as_tuple(value: ValueNode|undefined): TupleNode {
   if (value == null) throw new Error("cmd.ast: must be a Tuple (is null)");
-  if (value.type !== 'Tuple') throw new Error(`cmd.ast: must be a Tuple (is {value.type})`);
+  if (value.type !== 'Tuple') throw new Error(`cmd.ast: must be a Tuple (is ${value.type})`);
   return value;
 }
 
-function as_array(value: ValueNode|undefined) {
+function as_index(value: ValueNode|undefined): IndexNode {
+  if (value == null) throw new Error("cmd.ast: must be an Index (is null)");
+  if (value.type !== 'Index') throw new Error(`cmd.ast: must be an Index (is ${value.type})`);
+  return value;
+}
+
+function as_array(value: ValueNode|undefined): Array<ValueNode> {
   if (value == null) throw new Error("cmd.ast: must be a ListOf (is null)");
-  if (value.type !== 'ListOf') throw new Error(`cmd.ast: must be a ListOf (is {value.type})`);
+  if (value.type !== 'ListOf') throw new Error(`cmd.ast: must be a ListOf (is ${value.type})`);
   return value.items;
 }
 
-function as_str(value: ValueNode|undefined) {
+function as_str(value: ValueNode|undefined): string {
   if (value == null) throw new Error("cmd.ast: must be a string (is null)");
-  if (value.type !== 'Text') throw new Error(`cmd.ast: must be a Text (is {value.type})`);
-  return value.text;
+  if (value.type === 'Symbol') return value.name;
+  if (value.type === 'Text') return value.text;
+  throw new Error(`cmd.ast: must be a Symbol or Text (is ${value.type})`);
 }
 
-function as_str_array(value: ValueNode|undefined) {
+function as_str_array(value: ValueNode|undefined): Array<string> {
   const list = as_array(value);
   const res: Array<string> = [];
   for (const word of list) {
@@ -38,7 +45,7 @@ function as_str_array(value: ValueNode|undefined) {
   return res;
 }
 
-function as_str_set(value: ValueNode|undefined) {
+function as_str_set(value: ValueNode|undefined): StringSet {
   const list = as_array(value);
   const res: StringSet = new Set();
   for (const word of list) {
@@ -51,11 +58,11 @@ function as_str_set(value: ValueNode|undefined) {
 // Constructed from ValueNode data structures.
 
 export class ListOfProto {
-  type: '@ListOf';
+  type: '@ListOf' = '@ListOf';
   name: string;
   as: string;
   constructor(tuple: TupleNode) {
-    this.name = as_str(tuple.get('name'));
+    this.name = as_str(tuple.get('name')); // can pass.
     this.as = as_str(tuple.get('as'));
   }
   makeNew() {
@@ -64,14 +71,14 @@ export class ListOfProto {
 }
 
 export class IndexProto {
-  type: '@Index';
+  type: '@Index' = '@Index';
   name: string;
   as: string;
   keyField: string;
   valField: string;
   duplicate: string;
   constructor(tuple: TupleNode) {
-    this.name = as_str(tuple.get('name'));
+    this.name = as_str(tuple.get('name')); // can pass.
     this.as = as_str(tuple.get('as'));
     this.keyField = as_str(tuple.get('key'));
     this.valField = tuple.has('field') ? as_str(tuple.get('field')) : '';
@@ -83,7 +90,7 @@ export class IndexProto {
 }
 
 export class BlockProto {
-  type: '@Block';
+  type: '@Block' = '@Block';
   token: string;
   cmds: string;
   with: Array<string>;
@@ -97,37 +104,75 @@ export class BlockProto {
 }
 
 export class ParamProto {
-  type: '@ParamProto';
+  type: '@ParamProto' = '@ParamProto';
   is: string;
   as: string;
-  enum: StringSet|null;
+  enum: StringSet|undefined;
+  value: ValueNode|undefined;
   required: boolean;
   constructor(tuple: TupleNode) {
     this.is = as_str(tuple.get('is'));
     this.as = as_str(tuple.get('as'));
-    this.enum = tuple.has('enum') ? as_str_set(tuple.get('enum')) : null;
+    this.enum = tuple.has('enum') ? as_str_set(tuple.get('enum')) : undefined;
+    this.value = tuple.get('value');
     this.required = tuple.has('required');
   }
 }
 
 export class MatchTextProto {
-  type: '@MatchText';
+  type: '@MatchText' = '@MatchText';
   text: string;
   constructor(tuple: TupleNode) {
     this.text = as_str(tuple.get('text'));
   }
 }
 
+export class AssertProto {
+  type: '@Assert' = '@Assert';
+  field: string;
+  isIn: Array<string>|null;
+  notIn: Array<string>|null;
+  isSym: string|null;
+  isEq: string|null;
+  message: string;
+  constructor(tuple: TupleNode) {
+    this.field = as_str(tuple.get('field')); // TODO: dot-path will be as_str_array.
+    this.isIn = tuple.has('is-in') ? as_str_array(tuple.get('is-in')) : null;
+    this.notIn = tuple.has('not-in') ? as_str_array(tuple.get('not-in')) : null;
+    this.isSym = tuple.has('is-sym') ? as_str(tuple.get('is-sym')) : null;
+    this.isEq = tuple.has('is-eq') ? as_str(tuple.get('is-eq')) : null;
+    this.message = as_str(tuple.get('message'));
+  }
+}
+
+export class ResolveProto {
+  type: '@Resolve' = '@Resolve';
+  ref: string;
+  in: Array<string>;
+  with: TupleNode|null; // names -> ValueNodes (TODO: syms -> dot-paths OR symbols? -> DEPENDS on the type-of collection item! But what if the collection is unresolved? It must still have a statically-resolved item type?)
+  as: string|null;
+  message: string;
+  constructor(tuple: TupleNode) {
+    this.ref = as_str(tuple.get('ref')); // TODO: dot-path will be as_str_array.
+    this.in = as_str_array(tuple.get('in'));
+    this.with = tuple.has('with') ? as_tuple(tuple.get('with')) : null;
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : null;
+    this.message = as_str(tuple.get('message'));
+  }
+}
+
 export type DirectTypes = ParamProto|MatchTextProto;
 export type DirectList = Array<DirectTypes>;
 export type CollectionTypes = ListOfProto|IndexProto;
-export type OpTypes = MatchTextProto; // TODO: assert, assert-field, resolve, add-to, negate.
+export type OpTypes = AssertProto|ResolveProto;
 export type NamedArgsMap = Map<string, ParamProto>;
 
 export class CommandProto {
-  type: '@Command';
+  type: '@Command' = '@Command';
+  name: string;
   block: BlockProto|null = null;
   bindToArg: string = '';
+  yieldFrom: string = '';
   direct: Array<DirectTypes> = [];
   args: NamedArgsMap = new Map();
   collections: Array<CollectionTypes> = [];
@@ -135,6 +180,8 @@ export class CommandProto {
   addTo: Array<string>|null = null;
   notIn: Array<string>|null = null;
   constructor(tuple: TupleNode) {
+    // tuple tag is the command name.
+    this.name = tuple.tag;
     // block.
     if (tuple.has('block')) {
       this.block = new BlockProto(as_tuple(tuple.get('block')));
@@ -143,33 +190,48 @@ export class CommandProto {
     if (tuple.has('bind-to-arg')) {
       this.bindToArg = as_str(tuple.get('bind-to-arg'));
     }
+    if (tuple.has('yield-from')) {
+      this.yieldFrom = as_str(tuple.get('yield-from'));
+    }
     // direct.
     const raw_direct = as_array(tuple.get('direct'));
     for (const node of raw_direct) {
       const dir = as_tuple(node);
-      if (dir.tag === 'arg') {
+      if (dir.tag === 'direct') {
         this.direct.push(new ParamProto(dir));
       } else if (dir.tag === 'match') {
         this.direct.push(new MatchTextProto(dir));
       } else {
-        error(`unknown direct argument type '{dir.tag}'`);
+        error(`unknown direct argument type '${dir.tag}'`);
       }
     }
     // args.
-    const raw_args = as_tuple(tuple.get('args'));
-    for (const [name,node] of raw_args.fields) {
+    const raw_args = as_index(tuple.get('args'));
+    for (const [name, node] of raw_args.items) {
       this.args.set(name, new ParamProto(as_tuple(node)));
     }
     // collections.
-    const raw_collections = as_tuple(tuple.get('collections'));
-    for (const [_,node] of raw_collections.fields) {
+    const raw_collections = as_index(tuple.get('collections'));
+    for (const [_, node] of raw_collections.items) {
       const coll = as_tuple(node);
       if (coll.tag === 'index') {
         this.collections.push(new IndexProto(coll));
       } else if (coll.tag === 'list-of') {
         this.collections.push(new ListOfProto(coll));
       } else {
-        error(`unknown collection type '{coll.tag}'`);
+        error(`unknown collection type '${coll.tag}'`);
+      }
+    }
+    // ops.
+    const raw_ops = as_array(tuple.get('ops'));
+    for (const node of raw_ops) {
+      const oper = as_tuple(node);
+      if (oper.tag === 'assert') {
+        this.ops.push(new AssertProto(oper));
+      } else if (oper.tag === 'resolve') {
+        this.ops.push(new ResolveProto(oper));
+      } else {
+        error(`unknown op type '${oper.tag}'`);
       }
     }
     // add-to.
@@ -186,21 +248,21 @@ export class CommandProto {
 export type CommandMap = Map<string, CommandProto>;
 export type CommandSetMap = Map<string, CommandMap>;
 
-export function makeCommands(cmds: IndexNode) {
+export function makeCommands(cmds: ValueNode) {
+  const index: IndexNode = as_index(cmds);
   const res: CommandMap = new Map();
-  for (const [name,node] of cmds.items) {
+  for (const [name,node] of index.items) {
     const tuple = as_tuple(node);
     res.set(name, new CommandProto(tuple));
   }
   return res;
 }
 
-export function makeCommandSets(cmdSets: IndexNode) {
+export function makeCommandSets(cmdSets: ValueNode) {
+  const index: IndexNode = as_index(cmdSets);
   const res: CommandSetMap = new Map();
-  for (const [name,node] of cmdSets.items) {
-    const cmds = as_tuple(node).get('cmds'); // an IndexNode.
-    if (cmds == null) throw new Error("missing 'cmds' value in command-set tuple");
-    if (cmds.type !== 'Index') throw new Error("field 'cmds' must be an Index in a command-set tuple");
+  for (const [name,node] of index.items) {
+    const cmds = as_index(as_tuple(node).get('cmds'));
     res.set(name, makeCommands(cmds));
   }
   return res;

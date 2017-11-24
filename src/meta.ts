@@ -56,9 +56,10 @@ function sym(val:string) { return new SymbolNode(val); }
 function lst(val:Array<ValueNode>) { return new ListOfNode(val); }
 function sym_lst(seq:Array<string>) { return lst(seq.map(sym)); }
 function text(val:string) { return new TextNode(val); }
-function tup(obj:any) { return tuple('T', obj); }
-function ind(seq:Array<TupleNode>) { return indexify('I', seq); }
+function tup(obj:any) { return tuple('meta:tuple', obj); }
+function ind(seq:Array<TupleNode>) { return indexify('meta:index', seq); }
 
+function direct(obj:any) { return tuple('direct', obj); }
 function cmd(name:string, obj:any) { return tuple(name, obj); }
 function cmd_set(name:string, seq:Array<TupleNode>) { return tuple(name, { 'cmds':ind(seq) }); }
 
@@ -69,7 +70,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('duplicate', {
       // duplicate "message"
       direct: lst([
-        tup({ is: sym('text'), as: text('message') })
+        direct({ is: sym('text'), as: text('message') })
       ]),
       args: ind([]),
       collections: ind([]),
@@ -79,7 +80,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('merge-on', {
       // merge-on field,.. or "message"
       direct: lst([
-        tup({ is: sym('word'), as: sym('field') })
+        direct({ is: sym('word'), as: sym('field') })
       ]),
       args: ind([
         tup({ name: sym('or'), is: sym('text') })
@@ -91,7 +92,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('assert', {
       // assert field not-in coll or "message"
       direct: lst([
-        tup({ is: sym('word'), as: sym('field') })
+        direct({ is: sym('word'), as: sym('field') })
       ]),
       args: ind([
         tup({ name: sym('not-in'), is: sym('word-list'), as: sym('notIn'), required: sym('true') }),
@@ -105,7 +106,7 @@ export const metaCmds = indexify('cmd-sets', [
       // generate-id field from "str-{count}" not-in slot-ids
       // TODO: add it to something.
       direct: lst([
-        tup({ is: sym('word'), as: sym('field') })
+        direct({ is: sym('word'), as: sym('field') })
       ]),
       args: ind([
         tup({ name: sym('from'), is: sym('text'), required: sym('true') }),
@@ -121,7 +122,7 @@ export const metaCmds = indexify('cmd-sets', [
       // allow or require this command to have a nested command block.
       // block is|do with [cmds]
       direct: lst([
-        tup({ is: sym('word'), as: sym('token') })
+        direct({ is: sym('word'), as: sym('token') })
       ]),
       args: ind([
         tup({ name: sym('cmds'), is: sym('word'), as: sym('cmds'), required: sym('true') }), // command set.
@@ -136,7 +137,7 @@ export const metaCmds = indexify('cmd-sets', [
       // declare a positional argument.
       // direct [name] of [word|enum|text|number|flag] with [...enum] text ""
       direct: lst([
-        tup({ is: sym('word'), as: sym('as') })
+        direct({ is: sym('word'), as: sym('as') })
       ]),
       args: ind([
         tup({ name: sym('of'), is: sym('word'), as: sym('is'), required: sym('true') }),
@@ -152,7 +153,7 @@ export const metaCmds = indexify('cmd-sets', [
       // declare a named argument.
       // arg [name] of [word|enum|text|number|flag] as [name] required with [...enum] text ""
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
+        direct({ is: sym('word'), as: sym('name') })
       ]),
       args: ind([
         tup({ name: sym('of'), is: sym('word'), as: sym('is'), required: sym('true') }),
@@ -176,7 +177,7 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
       }),
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
+        direct({ is: sym('word'), as: sym('name') })
       ]),
       args: ind([]),
       collections: ind([
@@ -198,7 +199,7 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'mergeOn', 'asserts' ]),
       }),
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') }) // local name of the index.
+        direct({ is: sym('word'), as: sym('name') }) // local name of the index.
       ]),
       args: ind([
         tup({ name: sym('on'), is: sym('word'), as: sym('key'), required: sym('true') }), // name of the tuple-field to index on.
@@ -216,7 +217,7 @@ export const metaCmds = indexify('cmd-sets', [
       // declare a local list collection.
       // list-of [name]
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
+        direct({ is: sym('word'), as: sym('name') })
       ]),
       args: ind([]),
       collections: ind([]),
@@ -227,7 +228,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('expect', {
       // expect matching text to follow (direct pattern match)
       direct: lst([
-        tup({ is: sym('text'), as: sym('text') })
+        direct({ is: sym('text'), as: sym('text') })
       ]),
       args: ind([]),
       collections: ind([]),
@@ -242,7 +243,7 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
       }),
       direct: lst([
-        tup({ is: sym('text'), as: sym('text') })
+        direct({ is: sym('text'), as: sym('text') })
       ]),
       args: ind([
         tup({ name: sym('one-of'), is: sym('word') }),
@@ -265,7 +266,7 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
       }),
       direct: lst([
-        tup({ is: sym('word'), as: sym('token') })
+        direct({ is: sym('word'), as: sym('token') })
       ]),
       args: ind([
         tup({ name: sym('one-of'), is: sym('word') }),
@@ -283,25 +284,13 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('assert', {
       // assert id not-in slot-ids or "temp-slot '{id}' cannot shadow a slot name" // deferred on slot-ids
       direct: lst([
-        tup({ is: sym('word'), as: sym('key') })
+        direct({ is: sym('word'), as: sym('ref') })
       ]),
       args: ind([
-        tup({ name: sym('not-in'), is: sym('word-list'), as: sym('notIn'), required: sym('true') }), // local collection name (parse-time collection)
-        tup({ name: sym('or'), is: sym('text'), required: sym('true') }),     // error message.
-      ]),
-      collections: ind([]),
-      addTo: sym_lst([ 'ops' ]),
-    }),
-
-    cmd('assert-field', {
-      // assert-field type of slot is str or "slot '{id}' must be a string slot" // deferred on slot (after slot-ids)
-      direct: lst([
-        tup({ is: sym('word'), as: sym('field') })
-      ]),
-      args: ind([
-        tup({ name: sym('of'), is: sym('word'), required: sym('true') }), // local collection name (parse-time collection)
-        tup({ name: sym('is'), is: sym('word'), required: sym('true') }), // TODO: any kind of comparison value.
-        tup({ name: sym('or'), is: sym('text'), required: sym('true') }), // error message.
+        tup({ name: sym('is-in'), is: sym('word-list'), 'one-of': sym('opts') }),  // local collection names (parse-time collection)
+        tup({ name: sym('not-in'), is: sym('word-list'), 'one-of': sym('opts') }), // local collection names (parse-time collection)
+        tup({ name: sym('is-sym'), is: sym('word'), 'one-of': sym('opts') }),      // symbol value to compare against.
+        tup({ name: sym('or'), is: sym('text'), required: sym('true') })           // error message if assertion fails.
       ]),
       collections: ind([]),
       addTo: sym_lst([ 'ops' ]),
@@ -310,40 +299,14 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('resolve', {
       // resolve id in slot-ids as slot or "slot '{id}' not found in this scope" // deferred on slot-ids
       direct: lst([
-        tup({ is: sym('word'), as: sym('field') })      // local field to resolve as the resolver-key.
+        direct({ is: sym('word'), as: sym('ref') })
       ]),
       args: ind([
         tup({ name: sym('in'), is: sym('word-list'), required: sym('true') }), // local collection names (parse-time collection)
-        tup({ name: sym('with'), is: sym('key-value-map') }),           // tuple to resolve (in addition to the key)
-        tup({ name: sym('as'), is: sym('word') }),                      // new local bind-name (parse-time variable)
-        tup({ name: sym('or'), is: sym('text') }),                      // error message if resolve is impossible.
+        tup({ name: sym('with'), is: sym('key-value-map') }),                  // tuple to resolve (in addition to the key)
+        tup({ name: sym('as'), is: sym('word') }),                             // new local bind-name (parse-time variable)
+        tup({ name: sym('or'), is: sym('text') }),                             // error message if resolve is impossible.
       ]),
-      collections: ind([]),
-      addTo: sym_lst([ 'ops' ]),
-    }),
-
-    cmd('add-to', {
-      // add-to temp-slots a foo-type with id: as, type: str or "duplicate temp-slot '{id}' in this scope" // not deferred because it adds.
-      direct: lst([
-        tup({ is: sym('word'), as: sym('coll') })  // local collection name (parse-time collection)
-      ]),
-      args: ind([
-        tup({ name: sym('a'), is: sym('word') }),              // type-name of the new tuple to insert.
-        tup({ name: sym('with'), is: sym('key-value-map') }),  // values to initialise the new tuple.
-        tup({ name: sym('as'), is: sym('word') }),             // local name to bind with the new tuple.
-        tup({ name: sym('or'), is: sym('text') }),             // error message for duplicate key.
-        tup({ name: sym('merge'), is: sym('flag') }),          // merge with existing if duplicate key.
-      ]),
-      collections: ind([]),
-      addTo: sym_lst([ 'ops' ]),
-    }),
-
-    cmd('negate', {
-      // set-arg [name]: [expression]
-      direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
-      ]),
-      args: ind([]),
       collections: ind([]),
       addTo: sym_lst([ 'ops' ]),
     }),
@@ -358,7 +321,7 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
       }),
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
+        direct({ is: sym('word'), as: sym('name') })
       ]),
       args: ind([
         tup({ name: sym('add-to'), is: sym('word-list'), as: sym('addTo') }), // add command result to sets.
@@ -383,7 +346,7 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'cmds' ]),
       }),
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
+        direct({ is: sym('word'), as: sym('name') })
       ]),
       args: ind([]),
       collections: ind([
@@ -401,10 +364,10 @@ export const metaCmds = indexify('cmd-sets', [
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
       }),
       direct: lst([
-        tup({ is: sym('word'), as: sym('name') })
+        direct({ is: sym('word'), as: sym('name') })
       ]),
       args: ind([
-        tup({ name: sym('from'), is: sym('word') }) // args.from: optional name of field to yield.
+        tup({ name: sym('from'), is: sym('word'), as: sym('yield-from') }) // args.from: optional name of field to yield.
       ]),
       collections: ind([
         tup({ name: sym('collections'), is: sym('map'), key: sym('name'), duplicate: text("duplicate collection name '{name}' in command: {@command}") }),
