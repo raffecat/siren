@@ -86,7 +86,8 @@ export class Parser {
   parse_block(context: BlockContext, cmdMap: CommandMap) {
     const result: Array<ValueNode> = [];
     const text_len = this.text.length;
-    while (this.start <= text_len) {
+    while (this.start < text_len) {
+      //console.log(`at ${this.start} < ${text_len}`);
       const res = this.parse_command(context, cmdMap);
       context.inCommand = ''; // update block state for error messages.
       context.inArgument = ''; // also reset.
@@ -102,12 +103,13 @@ export class Parser {
 
     // handle blank line or comment.
     if (this.consume_end_of_line()) {
+      //console.log("EOL pre");
       return null;
     }
 
     // command word.
     const command = this.parse_cmd_name();
-    console.log(command);
+    console.log("CMD: "+command);
 
     // update block state for error messages.
     context.inCommand = command;
@@ -138,10 +140,11 @@ export class Parser {
 
     // keyword arguments.
     const text_len = this.text.length;
-    while (this.start <= text_len) {
+    while (this.start < text_len) {
 
       // check for end of the command.
       if (this.consume_end_of_line()) {
+        //console.log("EOL in");
         break;
       }
 
@@ -251,7 +254,7 @@ export class Parser {
       if (argSpec.type === '@ParamProto') {
         // direct [as] of [spec]
         context.inArgument = argSpec.as; // update error reporting state.
-        if (!tuple.add(argSpec.as, this.parse_spec(context, argSpec, `argument '${argSpec.as}'`))) {
+        if (!tuple.add(argSpec.as, this.parse_spec(context, argSpec, argSpec.as))) {
           return this.parse_error(`duplicate field '${argSpec.as}'`);
         }
       } else if (argSpec.type === '@MatchText') {
@@ -271,7 +274,7 @@ export class Parser {
 
   parse_spec(context: BlockContext, spec: ParamProto, argName: string): ValueNode {
     this.skip_space();
-    console.log(`arg '${argName}' of cmd ${context.inCommand} 'is' value '${spec.is}'`);
+    console.log(`arg '${argName}' of cmd '${context.inCommand}' is pattern '${spec.is}'`);
     if (spec.is == 'word') {
       return new SymbolNode(this.parse_symbol());
 
@@ -299,7 +302,7 @@ export class Parser {
       const words = new ListOfNode();
       words.add(new SymbolNode(this.parse_symbol()));
       const text_len = this.text.length;
-      while (this.start <= text_len) {
+      while (this.start < text_len) {
         this.skip_space();
         if (!this.consume(/,/gy)) break;
         this.skip_space();
@@ -316,7 +319,7 @@ export class Parser {
       }
       words.add(new SymbolNode(word));
       const text_len = this.text.length;
-      while (this.start <= text_len) {
+      while (this.start < text_len) {
         this.skip_space();
         if (!this.consume(/,/gy)) break;
         this.skip_space();
@@ -341,7 +344,7 @@ export class Parser {
         return this.parse_error(`duplicate name '${key}'`);
       }
       const text_len = this.text.length;
-      while (this.start <= text_len) {
+      while (this.start < text_len) {
         this.skip_space();
         if (!this.consume(/,/gy)) break;
         this.skip_space();
@@ -407,9 +410,11 @@ export class Parser {
     }
     if (match[1] === '"') {
       // double-quoted string should be a valid JSON string.
+      this.start = dquote.lastIndex;
       return JSON.parse(match[0]);
     } else {
       // single-quoted string: escape double-quotes and un-escape single-quotes.
+      this.start = squote.lastIndex;
       const text = '"'+match[1].replace(/"/g,'\\"').replace(/\\'/g,"'")+'"';
       // should now be a valid JSON string.
       return JSON.parse(text);
@@ -509,7 +514,7 @@ export class Parser {
       context.localCollections.get(name) || context.withCollections.get(name)
     ) : context.withCollections.get(name);
     if (!collection) {
-      return this.parse_error(`collection ${name} not found`);
+      return this.parse_error(`collection '${name}' not found`);
     }
     return collection;
   }

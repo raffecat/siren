@@ -3,7 +3,7 @@
         "src/siren.ts"
     ],
     "compilerOptions": {
-        "inlineSourceMap": true,
+        "inlineSourceMap": false,
         "alwaysStrict": true,
         "noImplicitAny": true,
         "strictNullChecks": true,

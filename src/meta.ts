@@ -39,7 +39,8 @@ function cmd_set(name:string, obj:any) {
 function tuple(tag:string, obj:any) {
   const res = new TupleNode(tag);
   for (const key of Object.keys(obj)) {
-    res.set(key, obj[key]);
+    const val = obj[key];
+    if (val !== undefined) res.set(key, val);
   }
   return res;
 }
@@ -47,21 +48,30 @@ function tuple(tag:string, obj:any) {
 function indexify(name:string, list:Array<TupleNode>) {
   const index = new IndexNode(name, 'name', '', 'duplicate key');
   for (const tup of list) {
-    index.add(tup.tag, tup);
+    const nameSym = tup.fields.get('name');
+    if (!nameSym || nameSym.type !== 'Symbol') throw new Error(`tuple name is not a symbol`);
+    if (!index.add(nameSym.name, tup)) throw new Error(`duplicate tuple.tag '${tup.tag}'`);
   }
   return index;
 }
 
+function osym(val:string|undefined) { return val==null ? val : new SymbolNode(val); }
+function otext(val:string|undefined) { return val==null ? val : new TextNode(val); }
 function sym(val:string) { return new SymbolNode(val); }
+function text(val:string) { return new TextNode(val); }
 function lst(val:Array<ValueNode>) { return new ListOfNode(val); }
 function sym_lst(seq:Array<string>) { return lst(seq.map(sym)); }
-function text(val:string) { return new TextNode(val); }
-function tup(obj:any) { return tuple('meta:tuple', obj); }
+function tup(obj:{ name:SymbolNode, [key:string]:ValueNode }) { return tuple(obj.name.name, obj); }
 function ind(seq:Array<TupleNode>) { return indexify('meta:index', seq); }
 
+function cmd(name:string, obj:any) { return tuple(name, Object.assign({ name:sym(name) }, obj)); }
+function cmd_set(name:string, seq:Array<TupleNode>) { return tuple('cmd-set', { name:sym(name), cmds:ind(seq) }); }
 function direct(obj:any) { return tuple('direct', obj); }
-function cmd(name:string, obj:any) { return tuple(name, obj); }
-function cmd_set(name:string, seq:Array<TupleNode>) { return tuple(name, { 'cmds':ind(seq) }); }
+function block(obj:any) { return tuple('block', obj); }
+function lst_col(o:{ name:string }) { return tuple('list-of', { name:sym(o.name) }); }
+function ind_col(o:{ name:string, key:string, field?:string, as?:string, duplicate?:string }) {
+  return tuple('index', { name:sym(o.name), key:sym(o.key), field:osym(o.field), as:osym(o.as), duplicate:otext(o.duplicate) });
+}
 
 export const metaCmds = indexify('cmd-sets', [
 
@@ -141,7 +151,7 @@ export const metaCmds = indexify('cmd-sets', [
       ]),
       args: ind([
         tup({ name: sym('of'), is: sym('word'), as: sym('is'), required: sym('true') }),
-        tup({ name: sym('with'), is: sym('word-set'), as: sym('enum') }),
+        tup({ name: sym('with'), is: sym('word-list'), as: sym('enum') }),
         tup({ name: sym('text'), is: sym('text'), as: sym('value') }),
         tup({ name: sym('alias'), is: sym('word') }), // additional local name (for shadowed arg names in nested cmds)
       ]),
@@ -159,7 +169,7 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('of'), is: sym('word'), as: sym('is'), required: sym('true') }),
         tup({ name: sym('required'), is: sym('flag') }),
         tup({ name: sym('as'), is: sym('word') }),
-        tup({ name: sym('with'), is: sym('word-set'), as: sym('enum') }),
+        tup({ name: sym('with'), is: sym('word-list'), as: sym('enum') }),
         tup({ name: sym('text'), is: sym('text'), as: sym('value') }),
         tup({ name: sym('unless'), is: sym('word-list') }), // TODO: implement in the parser.
       ]),
@@ -171,7 +181,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('list-arg', {
       // declare a named argument list with a repeating block.
       // list-arg [name] is ... in-cmd ... end
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-cmd'),
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
@@ -181,10 +191,10 @@ export const metaCmds = indexify('cmd-sets', [
       ]),
       args: ind([]),
       collections: ind([
-        tup({ name: sym('args'), is: sym('map'), key: sym('name'), duplicate: text("duplicate argument name '{name}' in command: {@command}") }),
-        tup({ name: sym('direct'), is: sym('list') }),
-        tup({ name: sym('addTo'), is: sym('list') }),
-        tup({ name: sym('ops'), is: sym('list') }),
+        ind_col({ name:'args', key:'name', duplicate:"duplicate argument name '{name}' in command: {@command}" }),
+        lst_col({ name:'direct' }),
+        lst_col({ name:'addTo' }),
+        lst_col({ name:'ops' }),
       ]),
       addTo: sym_lst([ 'direct', 'args' ]),
       notIn: sym_lst([ 'collections' ]),
@@ -193,7 +203,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('index', {
       // declare a local index collection and key field.
       // index [name] on [name] is ... in-index ... end
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-index'),
         with: sym_lst([ 'mergeOn', 'asserts' ]),
@@ -206,8 +216,8 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('field'), is: sym('word'), as: sym('field') }), // name of the tuple-field to keep as the value for the key.
       ]),
       collections: ind([
-        tup({ name: sym('mergeOn'), is: sym('map'), key: sym('field'), duplicate: text("duplicate merge-on field '{field}' in command: {@command}") }),
-        tup({ name: sym('asserts'), is: sym('list') }),
+        ind_col({ name:'mergeOn', key:'field', duplicate:"duplicate merge-on field '{field}' in command: {@command}" }),
+        lst_col({ name:'asserts' }),
       ]),
       addTo: sym_lst([ 'collections' ]),
       notIn: sym_lst([ 'args' ]),
@@ -237,7 +247,7 @@ export const metaCmds = indexify('cmd-sets', [
 
     cmd('match', {
       // test for a literal token (direct pattern match look-ahead)
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-cmd'),
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
@@ -250,17 +260,17 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('as'), is: sym('word') }),
       ]),
       collections: ind([
-        tup({ name: sym('args'), is: sym('map'), key: sym('name'), duplicate: text("duplicate argument name '{name}' in command: {@command}") }),
-        tup({ name: sym('direct'), is: sym('list') }),
-        tup({ name: sym('addTo'), is: sym('list') }),
-        tup({ name: sym('ops'), is: sym('list') }),
+        ind_col({ name:'args', key:'name', duplicate:"duplicate argument name '{name}' in command: {@command}" }),
+        lst_col({ name:'direct' }),
+        lst_col({ name:'addTo' }),
+        lst_col({ name:'ops' }),
       ]),
       addTo: sym_lst([ 'direct' ]),
     }),
 
     cmd('match-token', {
       // test the next token type (direct pattern match look-ahead)
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-cmd'),
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
@@ -273,10 +283,10 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('as'), is: sym('word') }),
       ]),
       collections: ind([
-        tup({ name: sym('args'), is: sym('map'), key: sym('name'), duplicate: text("duplicate argument name '{name}' in command: {@command}") }),
-        tup({ name: sym('direct'), is: sym('list') }),
-        tup({ name: sym('addTo'), is: sym('list') }),
-        tup({ name: sym('ops'), is: sym('list') }),
+        ind_col({ name:'args', key:'name', duplicate:"duplicate argument name '{name}' in command: {@command}" }),
+        lst_col({ name:'direct' }),
+        lst_col({ name:'addTo' }),
+        lst_col({ name:'ops' }),
       ]),
       addTo: sym_lst([ 'direct' ]),
     }),
@@ -290,6 +300,7 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('is-in'), is: sym('word-list'), 'one-of': sym('opts') }),  // local collection names (parse-time collection)
         tup({ name: sym('not-in'), is: sym('word-list'), 'one-of': sym('opts') }), // local collection names (parse-time collection)
         tup({ name: sym('is-sym'), is: sym('word'), 'one-of': sym('opts') }),      // symbol value to compare against.
+        tup({ name: sym('is-eq'), is: sym('word'), 'one-of': sym('opts') }),       // value node to compare against.
         tup({ name: sym('or'), is: sym('text'), required: sym('true') })           // error message if assertion fails.
       ]),
       collections: ind([]),
@@ -303,9 +314,9 @@ export const metaCmds = indexify('cmd-sets', [
       ]),
       args: ind([
         tup({ name: sym('in'), is: sym('word-list'), required: sym('true') }), // local collection names (parse-time collection)
-        tup({ name: sym('with'), is: sym('key-value-map') }),                  // tuple to resolve (in addition to the key)
-        tup({ name: sym('as'), is: sym('word') }),                             // new local bind-name (parse-time variable)
-        tup({ name: sym('or'), is: sym('text') }),                             // error message if resolve is impossible.
+        tup({ name: sym('insert'), is: sym('key-value-map') }),                // tuple to insert in collection.
+        tup({ name: sym('as'), is: sym('word') }),                             // new binding for result (parse-time variable)
+        tup({ name: sym('or'), is: sym('text') }),                             // error message if cannot resolve.
       ]),
       collections: ind([]),
       addTo: sym_lst([ 'ops' ]),
@@ -315,7 +326,7 @@ export const metaCmds = indexify('cmd-sets', [
   cmd_set('in-commands', [
 
     cmd('cmd', {
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-cmd'),
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
@@ -327,11 +338,11 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('add-to'), is: sym('word-list'), as: sym('addTo') }), // add command result to sets.
       ]),
       collections: ind([
-        tup({ name: sym('collections'), is: sym('map'), key: sym('name'), duplicate: text("duplicate collection name '{name}' in command: {@command}") }),
-        tup({ name: sym('args'), is: sym('map'), key: sym('name'), duplicate: text("duplicate argument name '{name}' in command: {@command}") }),
-        tup({ name: sym('direct'), is: sym('list') }),
-        tup({ name: sym('addTo'), is: sym('list') }),
-        tup({ name: sym('ops'), is: sym('list') }),
+        ind_col({ name:'collections', key:'name', duplicate:"duplicate collection name '{name}' in command: {@command}" }),
+        ind_col({ name:'args', key:'name', duplicate:"duplicate argument name '{name}' in command: {@command}" }),
+        lst_col({ name:'direct' }),
+        lst_col({ name:'addTo' }),
+        lst_col({ name:'ops' }),
       ]),
       addTo: sym_lst([ 'cmds' ]),
     }),
@@ -340,7 +351,7 @@ export const metaCmds = indexify('cmd-sets', [
   cmd_set('@', [
 
     cmd('commands', {
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-commands'),
         with: sym_lst([ 'cmds' ]),
@@ -350,7 +361,7 @@ export const metaCmds = indexify('cmd-sets', [
       ]),
       args: ind([]),
       collections: ind([
-        tup({ name: sym('cmds'), is: sym('map'), key: sym('name'), duplicate: text("duplicate command name '{name}' in command-set '{@command}'") }),
+        ind_col({ name:'cmds', key:'name', duplicate:"duplicate command name '{name}' in command-set '{@command}'" }),
       ]),
       addTo: sym_lst([ 'cmd-sets' ]),
     }),
@@ -358,7 +369,7 @@ export const metaCmds = indexify('cmd-sets', [
     cmd('argument', {
       // argument parsing pattern.
       // yields the field named in 'from', otherwise the args tuple.
-      block: tup({
+      block: block({
         token: sym('is'),
         cmds: sym('in-cmd'),
         with: sym_lst([ 'collections', 'args', 'direct', 'addTo', 'ops' ]),
@@ -370,11 +381,11 @@ export const metaCmds = indexify('cmd-sets', [
         tup({ name: sym('from'), is: sym('word'), as: sym('yield-from') }) // args.from: optional name of field to yield.
       ]),
       collections: ind([
-        tup({ name: sym('collections'), is: sym('map'), key: sym('name'), duplicate: text("duplicate collection name '{name}' in command: {@command}") }),
-        tup({ name: sym('args'), is: sym('map'), key: sym('name'), duplicate: text("duplicate argument name '{name}' in command: {@command}") }),
-        tup({ name: sym('direct'), is: sym('list') }),
-        tup({ name: sym('addTo'), is: sym('list') }),
-        tup({ name: sym('ops'), is: sym('list') }),
+        ind_col({ name:'collections', key:'name', duplicate:"duplicate collection name '{name}' in command: {@command}" }),
+        ind_col({ name:'args', key:'name', duplicate:"duplicate argument name '{name}' in command: {@command}" }),
+        lst_col({ name:'direct' }),
+        lst_col({ name:'addTo' }),
+        lst_col({ name:'ops' }),
       ]),
       addTo: sym_lst([ 'args-set' ]),
     }),

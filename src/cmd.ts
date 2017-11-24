@@ -12,25 +12,25 @@ function error(msg: string): never {
 }
 
 function as_tuple(value: ValueNode|undefined): TupleNode {
-  if (value == null) throw new Error("cmd.ast: must be a Tuple (is null)");
+  if (value == null) throw new Error("cmd.ast: expecting a Tuple (is null)");
   if (value.type !== 'Tuple') throw new Error(`cmd.ast: must be a Tuple (is ${value.type})`);
   return value;
 }
 
 function as_index(value: ValueNode|undefined): IndexNode {
-  if (value == null) throw new Error("cmd.ast: must be an Index (is null)");
+  if (value == null) throw new Error("cmd.ast: expecting an Index (is null)");
   if (value.type !== 'Index') throw new Error(`cmd.ast: must be an Index (is ${value.type})`);
   return value;
 }
 
 function as_array(value: ValueNode|undefined): Array<ValueNode> {
-  if (value == null) throw new Error("cmd.ast: must be a ListOf (is null)");
+  if (value == null) throw new Error("cmd.ast: expecting a ListOf (is null)");
   if (value.type !== 'ListOf') throw new Error(`cmd.ast: must be a ListOf (is ${value.type})`);
   return value.items;
 }
 
 function as_str(value: ValueNode|undefined): string {
-  if (value == null) throw new Error("cmd.ast: must be a string (is null)");
+  if (value == null) throw new Error("cmd.ast: expecting a string (is null)");
   if (value.type === 'Symbol') return value.name;
   if (value.type === 'Text') return value.text;
   throw new Error(`cmd.ast: must be a Symbol or Text (is ${value.type})`);
@@ -63,9 +63,10 @@ export class ListOfProto {
   as: string;
   constructor(tuple: TupleNode) {
     this.name = as_str(tuple.get('name')); // can pass.
-    this.as = as_str(tuple.get('as'));
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
   }
   makeNew() {
+    console.log(`ListOf makeNew '${this.name}'`);
     return new ListOfNode();
   }
 }
@@ -79,12 +80,14 @@ export class IndexProto {
   duplicate: string;
   constructor(tuple: TupleNode) {
     this.name = as_str(tuple.get('name')); // can pass.
-    this.as = as_str(tuple.get('as'));
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
+    console.log(`IndexProto declared '${this.name}'`);
     this.keyField = as_str(tuple.get('key'));
     this.valField = tuple.has('field') ? as_str(tuple.get('field')) : '';
     this.duplicate = tuple.has('duplicate') ? as_str(tuple.get('duplicate')) : '';
   }
   makeNew() {
+    console.log(`IndexProto makeNew '${this.name}'`);
     return new IndexNode(this.name, this.keyField, this.valField, this.duplicate);
   }
 }
@@ -99,20 +102,22 @@ export class BlockProto {
     this.token = as_str(tuple.get('token'));
     this.cmds = as_str(tuple.get('cmds'));
     this.with = as_str_array(tuple.get('with'));
-    this.addTo = as_str_array(tuple.get('add-to'));
+    this.addTo = tuple.has('add-to') ? as_str_array(tuple.get('add-to')) : [];
   }
 }
 
 export class ParamProto {
   type: '@ParamProto' = '@ParamProto';
+  name: string;
   is: string;
   as: string;
   enum: StringSet|undefined;
   value: ValueNode|undefined;
   required: boolean;
-  constructor(tuple: TupleNode) {
+  constructor(tuple:TupleNode) {
+    this.name = as_str(tuple.get('name') || tuple.get('as')); // arg has 'name'; direct has 'as'.
     this.is = as_str(tuple.get('is'));
-    this.as = as_str(tuple.get('as'));
+    this.as = as_str(tuple.get('as') || tuple.get('name'));
     this.enum = tuple.has('enum') ? as_str_set(tuple.get('enum')) : undefined;
     this.value = tuple.get('value');
     this.required = tuple.has('required');
@@ -182,6 +187,7 @@ export class CommandProto {
   constructor(tuple: TupleNode) {
     // tuple tag is the command name.
     this.name = tuple.tag;
+    console.log(`CommandProto declared '${this.name}'`);
     // block.
     if (tuple.has('block')) {
       this.block = new BlockProto(as_tuple(tuple.get('block')));
@@ -223,15 +229,17 @@ export class CommandProto {
       }
     }
     // ops.
-    const raw_ops = as_array(tuple.get('ops'));
-    for (const node of raw_ops) {
-      const oper = as_tuple(node);
-      if (oper.tag === 'assert') {
-        this.ops.push(new AssertProto(oper));
-      } else if (oper.tag === 'resolve') {
-        this.ops.push(new ResolveProto(oper));
-      } else {
-        error(`unknown op type '${oper.tag}'`);
+    const raw_ops = tuple.get('ops');
+    if (raw_ops) {
+      for (const node of as_array(raw_ops)) {
+        const oper = as_tuple(node);
+        if (oper.tag === 'assert') {
+          this.ops.push(new AssertProto(oper));
+        } else if (oper.tag === 'resolve') {
+          this.ops.push(new ResolveProto(oper));
+        } else {
+          error(`unknown op type '${oper.tag}'`);
+        }
       }
     }
     // add-to.
