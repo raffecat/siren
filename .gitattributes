@@ -1,0 +1,3 @@
+*.lua linguist-vendored
+lua-lib/ linguist-vendored
+
