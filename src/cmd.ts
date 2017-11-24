@@ -54,6 +54,44 @@ function as_str_set(value: ValueNode|undefined): StringSet {
   return res;
 }
 
+// Direct arguments (pattern matching)
+
+function parse_direct(tuple: TupleNode, direct: Array<DirectTypes>) {
+  const raw_direct = as_array(tuple.get('direct'));
+  for (const node of raw_direct) {
+    const dir = as_tuple(node);
+    if (dir.tag === 'direct') {
+      direct.push(new ParamProto(dir));
+    } else if (dir.tag === 'expect') {
+      direct.push(new ExpectProto(dir));
+    } else if (dir.tag === 'match') {
+      direct.push(new MatchTextProto(dir));
+    } else if (dir.tag === 'match-token') {
+      direct.push(new MatchTokenProto(dir));
+    } else if (dir.tag === 'match-list') {
+      direct.push(new MatchListProto(dir));
+    } else {
+      error(`unknown direct argument type '${dir.tag}'`);
+    }
+  }
+}
+
+function parse_ops(tuple: TupleNode, ops: Array<OpTypes>) {
+  const raw_ops = tuple.get('ops');
+  if (raw_ops) {
+    for (const node of as_array(raw_ops)) {
+      const oper = as_tuple(node);
+      if (oper.tag === 'assert') {
+        ops.push(new AssertProto(oper));
+      } else if (oper.tag === 'resolve') {
+        ops.push(new ResolveProto(oper));
+      } else {
+        error(`unknown op type '${oper.tag}'`);
+      }
+    }
+  }
+}
+
 // Internal Command AST.
 // Constructed from ValueNode data structures.
 
@@ -63,6 +101,7 @@ export class ListOfProto {
   as: string;
   constructor(tuple: TupleNode) {
     this.name = as_str(tuple.get('name')); // can pass.
+    console.log(`new ListOfProto '${this.name}'`);
     this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
   }
   makeNew() {
@@ -81,7 +120,7 @@ export class IndexProto {
   constructor(tuple: TupleNode) {
     this.name = as_str(tuple.get('name')); // can pass.
     this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
-    console.log(`IndexProto declared '${this.name}'`);
+    console.log(`new IndexProto '${this.name}'`);
     this.keyField = as_str(tuple.get('key'));
     this.valField = tuple.has('field') ? as_str(tuple.get('field')) : '';
     this.duplicate = tuple.has('duplicate') ? as_str(tuple.get('duplicate')) : '';
@@ -118,35 +157,79 @@ export class ParamProto {
     this.name = as_str(tuple.get('name') || tuple.get('as')); // arg has 'name'; direct has 'as'.
     this.is = as_str(tuple.get('is'));
     this.as = as_str(tuple.get('as') || tuple.get('name'));
-    this.enum = tuple.has('enum') ? as_str_set(tuple.get('enum')) : undefined;
-    this.value = tuple.get('value');
+    this.enum = (this.is==='enum'||this.is==='enum-set') ? as_str_set(tuple.get('enum')) : undefined;
+    this.value = (this.is==='value') ? tuple.get('value') : undefined;
     this.required = tuple.has('required');
   }
 }
 
-export class MatchTextProto {
-  type: '@MatchText' = '@MatchText';
+export class ExpectProto {
+  type: '@Expect' = '@Expect';
   text: string;
   constructor(tuple: TupleNode) {
     this.text = as_str(tuple.get('text'));
   }
 }
 
+export class MatchTextProto {
+  type: '@MatchText' = '@MatchText';
+  text: string;
+  oneOf: string;
+  as: string;
+  direct: Array<DirectTypes> = [];
+  ops: Array<OpTypes> = [];
+  constructor(tuple: TupleNode) {
+    this.text = as_str(tuple.get('text'));
+    this.oneOf = tuple.has('one-of') ? as_str(tuple.get('one-of')) : '';
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
+    parse_direct(tuple, this.direct);
+    parse_ops(tuple, this.ops);
+  }
+}
+
+export class MatchTokenProto {
+  type: '@MatchToken' = '@MatchToken';
+  token: string;
+  oneOf: string;
+  as: string;
+  direct: Array<DirectTypes> = [];
+  ops: Array<OpTypes> = [];
+  constructor(tuple: TupleNode) {
+    this.token = as_str(tuple.get('token'));
+    this.oneOf = tuple.has('one-of') ? as_str(tuple.get('one-of')) : '';
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
+    parse_direct(tuple, this.direct);
+    parse_ops(tuple, this.ops);
+  }
+}
+
+export class MatchListProto {
+  type: '@MatchList' = '@MatchList';
+  as: string;
+  direct: Array<DirectTypes> = [];
+  ops: Array<OpTypes> = [];
+  constructor(tuple: TupleNode) {
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
+    parse_direct(tuple, this.direct);
+    parse_ops(tuple, this.ops);
+  }
+}
+
 export class AssertProto {
   type: '@Assert' = '@Assert';
-  field: string;
+  ref: string;
   isIn: Array<string>|null;
   notIn: Array<string>|null;
   isSym: string|null;
   isEq: string|null;
   message: string;
   constructor(tuple: TupleNode) {
-    this.field = as_str(tuple.get('field')); // TODO: dot-path will be as_str_array.
+    this.ref = as_str(tuple.get('ref')); // TODO: dot-path will be as_str_array.
     this.isIn = tuple.has('is-in') ? as_str_array(tuple.get('is-in')) : null;
     this.notIn = tuple.has('not-in') ? as_str_array(tuple.get('not-in')) : null;
     this.isSym = tuple.has('is-sym') ? as_str(tuple.get('is-sym')) : null;
     this.isEq = tuple.has('is-eq') ? as_str(tuple.get('is-eq')) : null;
-    this.message = as_str(tuple.get('message'));
+    this.message = as_str(tuple.get('or'));
   }
 }
 
@@ -154,19 +237,19 @@ export class ResolveProto {
   type: '@Resolve' = '@Resolve';
   ref: string;
   in: Array<string>;
-  with: TupleNode|null; // names -> ValueNodes (TODO: syms -> dot-paths OR symbols? -> DEPENDS on the type-of collection item! But what if the collection is unresolved? It must still have a statically-resolved item type?)
-  as: string|null;
+  as: string;
+  insert: TupleNode|null; // names -> ValueNodes (TODO: syms -> dot-paths OR symbols? -> DEPENDS on the type-of collection item! But what if the collection is unresolved? It must still have a statically-resolved item type?)
   message: string;
   constructor(tuple: TupleNode) {
     this.ref = as_str(tuple.get('ref')); // TODO: dot-path will be as_str_array.
     this.in = as_str_array(tuple.get('in'));
-    this.with = tuple.has('with') ? as_tuple(tuple.get('with')) : null;
-    this.as = tuple.has('as') ? as_str(tuple.get('as')) : null;
-    this.message = as_str(tuple.get('message'));
+    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
+    this.insert = tuple.has('insert') ? as_tuple(tuple.get('insert')) : null;
+    this.message = tuple.has('or') ? as_str(tuple.get('or')) : ''; // optional for list-of.
   }
 }
 
-export type DirectTypes = ParamProto|MatchTextProto;
+export type DirectTypes = ParamProto|ExpectProto|MatchTextProto|MatchTokenProto|MatchListProto;
 export type DirectList = Array<DirectTypes>;
 export type CollectionTypes = ListOfProto|IndexProto;
 export type OpTypes = AssertProto|ResolveProto;
@@ -179,15 +262,15 @@ export class CommandProto {
   bindToArg: string = '';
   yieldFrom: string = '';
   direct: Array<DirectTypes> = [];
+  ops: Array<OpTypes> = [];
   args: NamedArgsMap = new Map();
   collections: Array<CollectionTypes> = [];
-  ops: Array<OpTypes> = [];
   addTo: Array<string>|null = null;
   notIn: Array<string>|null = null;
   constructor(tuple: TupleNode) {
     // tuple tag is the command name.
     this.name = tuple.tag;
-    console.log(`CommandProto declared '${this.name}'`);
+    console.log(`new CommandProto '${this.name}'`);
     // block.
     if (tuple.has('block')) {
       this.block = new BlockProto(as_tuple(tuple.get('block')));
@@ -200,17 +283,8 @@ export class CommandProto {
       this.yieldFrom = as_str(tuple.get('yield-from'));
     }
     // direct.
-    const raw_direct = as_array(tuple.get('direct'));
-    for (const node of raw_direct) {
-      const dir = as_tuple(node);
-      if (dir.tag === 'direct') {
-        this.direct.push(new ParamProto(dir));
-      } else if (dir.tag === 'match') {
-        this.direct.push(new MatchTextProto(dir));
-      } else {
-        error(`unknown direct argument type '${dir.tag}'`);
-      }
-    }
+    parse_direct(tuple, this.direct);
+    parse_ops(tuple, this.ops);
     // args.
     const raw_args = as_index(tuple.get('args'));
     for (const [name, node] of raw_args.items) {
@@ -226,20 +300,6 @@ export class CommandProto {
         this.collections.push(new ListOfProto(coll));
       } else {
         error(`unknown collection type '${coll.tag}'`);
-      }
-    }
-    // ops.
-    const raw_ops = tuple.get('ops');
-    if (raw_ops) {
-      for (const node of as_array(raw_ops)) {
-        const oper = as_tuple(node);
-        if (oper.tag === 'assert') {
-          this.ops.push(new AssertProto(oper));
-        } else if (oper.tag === 'resolve') {
-          this.ops.push(new ResolveProto(oper));
-        } else {
-          error(`unknown op type '${oper.tag}'`);
-        }
       }
     }
     // add-to.
@@ -267,11 +327,13 @@ export function makeCommands(cmds: ValueNode) {
 }
 
 export function makeCommandSets(cmdSets: ValueNode) {
+  console.log("starting makeCommandSets");
   const index: IndexNode = as_index(cmdSets);
   const res: CommandSetMap = new Map();
   for (const [name,node] of index.items) {
     const cmds = as_index(as_tuple(node).get('cmds'));
     res.set(name, makeCommands(cmds));
   }
+  console.log("ended makeCommandSets");
   return res;
 }

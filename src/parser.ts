@@ -33,7 +33,7 @@ function commandPath(context: BlockContext) {
   let path = context.inCommand || '[not in a command]';
   let walk: BlockContext|null = context;
   while (walk != null) {
-    path = `${path} < ${context.command}`;
+    path = `${path} < ${walk.command}`;
     walk = walk.parent;
   }
   return path;
@@ -373,7 +373,7 @@ export class Parser {
   }
 
   parse_symbol() {
-    const word = this.consume(/[@\w\d\-\/+.]+/gy);
+    const word = this.consume(/[@\w\d\-.]+/gy);
     if (!word) {
       return this.parse_error('expecting a symbolic name');
     }
@@ -526,17 +526,17 @@ export class Parser {
       if (collection.type === 'Index') {
         // index collection.
         if (tuple.type !== 'Tuple') {
-          return this.parse_error(`value added to index-collection ${name} must be a tuple`);
+          return this.parse_error(`value added to index-collection '${name}' must be a tuple`);
         }
         const key = tuple.get(collection.keyField);
-        if (key == null) return this.parse_error(`missing collection key field ${collection.keyField} in tuple added to collection {name}`);
+        if (key == null) return this.parse_error(`missing collection key field '${collection.keyField}' in tuple added to collection '${name}'`);
         const keyStr = (key.type === 'Symbol') ? key.name :
                        (key.type === 'Text') ? key.text :
-                       this.parse_error(`collection key from field '${collection.keyField}' must be a Symbol or Text value for collection ${name}`);
+                       this.parse_error(`collection key from field '${collection.keyField}' must be a Symbol or Text value for collection '${name}'`);
         let value: ValueNode = tuple;
         if (collection.valField) {
           const fieldVal = tuple.get(collection.valField);
-          if (fieldVal == null) return this.parse_error(`missing value-field ${collection.valField} in tuple added to collection ${name}`);
+          if (fieldVal == null) return this.parse_error(`missing value-field '${collection.valField}' in tuple added to collection '${name}'`);
           value = fieldVal; // non-null.
         }
         if (collection.has(keyStr)) {
@@ -567,7 +567,7 @@ export class Parser {
         if (key == null) return this.parse_error(`missing collection key field '${collection.keyField}' in tuple added to collection '${name}'`);
         const keyStr = (key.type === 'Symbol') ? key.name :
                        (key.type === 'Text') ? key.text :
-                       this.parse_error(`collection key from field '{collection.keyField}' must be a Symbol or Text value for collection '${name}'`);
+                       this.parse_error(`collection key from field '${collection.keyField}' must be a Symbol or Text value for collection '${name}'`);
         if (collection.has(keyStr)) {
           // key does exist in this collection.
           const msg = collection.duplicate || "duplicate key '{@value}' (field '{@key}') added to collection '{@coll}' in command: {@command}";

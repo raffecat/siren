@@ -53,7 +53,9 @@ export class IndexNode {
   }
   has(key: string) { return this.items.has(key); }
   get(key: string) { return this.items.get(key); } // can be undefined.
-  add(key: string, val: ValueNode) { return this.items.has(key) ? false : (this.items.set(key, val), true); }
+  add(key: string, val: ValueNode) {
+    console.log(`+ adding '${key}' to '${this.id}'`);
+    return this.items.has(key) ? false : (this.items.set(key, val), true); }
 }
 
 export class ListOfNode {

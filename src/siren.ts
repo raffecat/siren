@@ -30,7 +30,7 @@ function encoder(key:any, val:any) {
 
 function compileCmds(filename: string) {
   // compile a source-file that uses meta-commands to make command-sets.
-  const cmdSets = new IndexNode('cmd-sets', 'name', 'cmds', "duplicate command-set name '{name}'");
+  const cmdSets = new IndexNode('cmd-sets', 'name', '', "duplicate command-set name '{name}'");
   const argSet = new IndexNode('args-set', 'name', '', "duplicate argument-pattern name '{name}'");
   const collections: CollectionMap = new Map([ ['cmd-sets',cmdSets], ['args-set',argSet] ]);
   ;(new Parser(read_text(filename), metaCmdSets, metaArgSet, filename, collections)).parse();
