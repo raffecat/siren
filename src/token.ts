@@ -31,7 +31,7 @@ export class EOLToken {
   constructor(public loc: Location) {}
 }
 
-export function parse(text: string, filename: string) {
+export function tokenize(text: string, filename: string) {
 
   var start = 0;
   var line = 1;
@@ -114,15 +114,15 @@ export function parse(text: string, filename: string) {
       return new EOLToken(loc);
     }
 
+    // number.
+    if (test(/-[\d]|[\d]/gy)) {
+      return new NumToken(parse_number(), loc);
+    }
+
     // symbol.
     const sym = consume(/[@$\w][@$\w\d.-]*/gy);
     if (sym) {
       return new SymToken(sym, loc);
-    }
-
-    // number.
-    if (test(/-[\d]|[\d]/gy)) {
-      return new NumToken(parse_number(), loc);
     }
 
     // text.

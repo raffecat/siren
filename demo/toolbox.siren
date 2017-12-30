@@ -86,10 +86,10 @@ scene background 161616 camera ui mouse hide is
     read-from tmp-panel of tb-scenes-panel read chits as scn-chits
     format-text "{proj-path}/{proj-to-load}" to scn-filename
     read-json scn-filename as scn-data
-    read-from-data scn-data read scenes as tmp-scenes
+    read-from-data scn-data read scenes list as tmp-scenes
     each-data tmp-scenes as scn-it do
       add 1 to counter next-scene-id
-      read-from-data scn-it read id as scn-id, name as scn-name, filename as scn-filename
+      read-from-data scn-it read id str as scn-id, name str as scn-name, filename str as scn-filename
       spawn tb-scene-chit into scn-chits with id=scn-id, name=scn-name, app=self, filename=scn-filename
       -- trace "SPAWNED a scene chit"
     end
@@ -159,7 +159,7 @@ scene background 161616 camera ui mouse hide is
       -- TODO: avoid importing the same scene twice
       -- load the scene
       read-json chosen-file to scn-data
-      read-from-data scn-data read name as scn-name
+      read-from-data scn-data read name str as scn-name
       -- spawn the scene editor and main tab
       spawn-frame tb-scene-editor as tmp-panel with asset-db=asset-db, image-cache=image-cache, layers-panel=layers-panel, nav-panel=nav-panel, part-cache=part-cache, scn-data=scn-data
       spawn-frame tb-main-tab as tmp-tab into main-tabs.tabs with group=main-tabs.group, label=scn-name, panel=tmp-panel

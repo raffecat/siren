@@ -1,6 +1,7 @@
 'use strict';
 
-import { ValueNode, TupleNode, IndexNode, ListOfNode } from './ast';
+import { Location } from './token';
+import { ValueNode, TupleNode, IndexNode, ListOfNode, CollectionMap, ValueMap } from './ast';
 
 export type StringMap = { [key:string]:string };
 export type StringSet = Set<string>;
@@ -13,52 +14,49 @@ function error(msg: string): never {
 
 function as_tuple(value: ValueNode|undefined): TupleNode {
   if (value == null) throw new Error("cmd.ast: expecting a Tuple (is null)");
-  if (value.type !== 'Tuple') throw new Error(`cmd.ast: must be a Tuple (is ${value.type})`);
-  return value;
+  const result = value.val();
+  if (result.type !== 'Tuple') throw new Error(`cmd.ast: must be a Tuple (is ${result.type})`);
+  return result;
 }
 
 function as_index(value: ValueNode|undefined): IndexNode {
   if (value == null) throw new Error("cmd.ast: expecting an Index (is null)");
-  if (value.type !== 'Index') throw new Error(`cmd.ast: must be an Index (is ${value.type})`);
-  return value;
+  const result = value.val();
+  if (result.type !== 'Index') throw new Error(`cmd.ast: must be an Index (is ${result.type})`);
+  return result;
 }
 
-function as_array(value: ValueNode|undefined): Array<ValueNode> {
+function as_map(value: ValueNode|undefined): ValueMap {
+  return as_index(value).items;
+}
+
+function as_list(value: ValueNode|undefined): Array<ValueNode> {
   if (value == null) throw new Error("cmd.ast: expecting a ListOf (is null)");
-  if (value.type !== 'ListOf') throw new Error(`cmd.ast: must be a ListOf (is ${value.type})`);
-  return value.items;
+  const result = value.val();
+  if (result.type !== 'ListOf') throw new Error(`cmd.ast: must be a ListOf (is ${result.type})`);
+  return result.items;
 }
 
 function as_str(value: ValueNode|undefined): string {
   if (value == null) throw new Error("cmd.ast: expecting a string (is null)");
-  if (value.type === 'Symbol') return value.name;
-  if (value.type === 'Text') return value.text;
-  throw new Error(`cmd.ast: must be a Symbol or Text (is ${value.type})`);
+  const result = value.val();
+  if (result.type === 'Symbol') return result.name;
+  if (result.type === 'Text') return result.text;
+  throw new Error(`cmd.ast: must be a Symbol or Text (is ${result.type})`);
 }
 
 function as_str_array(value: ValueNode|undefined): Array<string> {
-  const list = as_array(value);
-  const res: Array<string> = [];
-  for (const word of list) {
-    res.push(as_str(word));
-  }
-  return res;
+  return as_list(value).map(as_str);
 }
 
 function as_str_set(value: ValueNode|undefined): StringSet {
-  const list = as_array(value);
-  const res: StringSet = new Set();
-  for (const word of list) {
-    res.add(as_str(word));
-  }
-  return res;
+  return new Set(as_list(value).map(as_str));
 }
 
 // Direct arguments (pattern matching)
 
 function parse_direct(tuple: TupleNode, direct: Array<DirectTypes>) {
-  const raw_direct = as_array(tuple.get('direct'));
-  for (const node of raw_direct) {
+  for (const node of as_list(tuple.get('direct'))) {
     const dir = as_tuple(node);
     if (dir.tag === 'direct') {
       direct.push(new ParamProto(dir));
@@ -79,18 +77,64 @@ function parse_direct(tuple: TupleNode, direct: Array<DirectTypes>) {
 function parse_ops(tuple: TupleNode, ops: Array<OpTypes>) {
   const raw_ops = tuple.get('ops');
   if (raw_ops) {
-    for (const node of as_array(raw_ops)) {
+    for (const node of as_list(raw_ops)) {
       const oper = as_tuple(node);
       if (oper.tag === 'assert') {
-        ops.push(new AssertProto(oper));
+        ops.push(new AssertOp(oper));
       } else if (oper.tag === 'resolve') {
-        ops.push(new ResolveProto(oper));
+        ops.push(new ResolveOp(oper));
+      } else if (oper.tag === 'map-sym') {
+        ops.push(new MapSymOp(oper));
       } else {
         error(`unknown op type '${oper.tag}'`);
       }
     }
   }
 }
+
+export interface ParserState {
+  loc: Location;
+}
+
+// BlockContext: shared state involved in parsing an 'is' block for a named command.
+// Includes a result tuple, locally defined collections and collections passed in.
+
+export class BlockContext {
+  // local collections defined in this block (list-of, index)
+  localCollections: CollectionMap = new Map();
+  // becomes true when an 'end' command is encountered to end the block.
+  didEnd = false;
+  // current command and argument being parsed in this block, for error reporting.
+  inCommand: string = '';
+  inArgument: string = '';
+  // required at block creation:
+  constructor(
+    private parser: ParserState, // for error reporting.
+    public command: string,  // name of command that is parsing this block.
+    public tuple: TupleNode, // local fields added to this block (direct, arg, list-of, index)
+    public withCollections: CollectionMap, // collections passed in to this block via `with` in a block directive.
+    public parent: BlockContext|null,  // enclosing block context
+  ){}
+  canEnd() {
+    return this.parent != null;
+  }
+  error(msg: string): never {
+    const inArg = this.inArgument;
+    if (inArg) msg += " for argument '" + inArg + "'";
+    msg += " in command: " + this.commandPath();
+    throw new Error(`${msg} at line ${this.parser.loc.line} in ${this.parser.loc.file}`);
+  }
+  commandPath() {
+    let path = this.inCommand || '[not in a command]';
+    let walk: BlockContext|null = this;
+    while (walk != null) {
+      path = `${path} < ${walk.command}`;
+      walk = walk.parent;
+    }
+    return path;
+  }
+}
+
 
 // Internal Command AST.
 // Constructed from ValueNode data structures.
@@ -191,13 +235,13 @@ export class MatchTokenProto {
   type: '@MatchToken' = '@MatchToken';
   token: string;
   oneOf: string;
-  as: string;
+  // as: string;
   direct: Array<DirectTypes> = [];
   ops: Array<OpTypes> = [];
   constructor(tuple: TupleNode) {
     this.token = as_str(tuple.get('token'));
     this.oneOf = tuple.has('one-of') ? as_str(tuple.get('one-of')) : '';
-    this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
+    // this.as = tuple.has('as') ? as_str(tuple.get('as')) : '';
     parse_direct(tuple, this.direct);
     parse_ops(tuple, this.ops);
   }
@@ -215,8 +259,8 @@ export class MatchListProto {
   }
 }
 
-export class AssertProto {
-  type: '@Assert' = '@Assert';
+export class AssertOp {
+  type: '@AssertOp' = '@AssertOp';
   ref: string;
   isIn: Array<string>|null;
   notIn: Array<string>|null;
@@ -231,10 +275,40 @@ export class AssertProto {
     this.isEq = tuple.has('is-eq') ? as_str(tuple.get('is-eq')) : null;
     this.message = as_str(tuple.get('or'));
   }
+  apply(context: BlockContext, tuple: TupleNode) {
+    // TODO: might need to wait for the ref to become resolved.
+    const value = tuple.get(this.ref);
+    if (value == null) {
+      return context.error(`assert: ref '${this.ref}' not found in tuple '${tuple.tag}'`);
+    }
+    if (this.isSym) {
+      // verify the type of the resolved value.
+      if (value.type !== 'Symbol') {
+        return context.error(`assertion failed: ref '${this.ref}' is not a symbol`);
+      }
+    } else if (this.isEq) {
+      // resolved 'ref' must be equal to resolved 'isEq' ref.
+      // TODO: might need to wait for the 'isEq' ref to become resolved.
+      const comp = tuple.get(this.isEq);
+      if (comp == null) {
+        return context.error(`assert: is-eq ref '${this.isEq}' not found in tuple '${tuple.tag}'`);
+      }
+      // compare equality.
+      if (!value.equals(comp)) {
+        return context.error(`assertion failed: ref '${this.isEq}' is not equal to '${this.isEq}'`);
+      }
+    } else if (this.isIn) {
+      console.log("Not implemented: @ApplyOp(is-in)");
+    } else if (this.notIn) {
+      console.log("Not implemented: @ApplyOp(not-in)");
+    } else {
+      return context.error(`assert: unimplemented operation.`);
+    }
+  }
 }
 
-export class ResolveProto {
-  type: '@Resolve' = '@Resolve';
+export class ResolveOp {
+  type: '@ResolveOp' = '@ResolveOp';
   ref: string;
   in: Array<string>;
   as: string;
@@ -247,12 +321,77 @@ export class ResolveProto {
     this.insert = tuple.has('insert') ? as_tuple(tuple.get('insert')) : null;
     this.message = tuple.has('or') ? as_str(tuple.get('or')) : ''; // optional for list-of.
   }
+  apply(context: BlockContext, tuple: TupleNode) {
+    // TODO: might need to wait for the ref to become resolved.
+    // TODO: might need to wait for each of the collections to become resolved.
+    const value = tuple.get(this.ref);
+    if (value == null) {
+      return context.error(`resolve: ref '${this.ref}' not found in tuple '${tuple.tag}'`);
+    }
+    console.log("Not implemented: @ResolveOp");
+    if (this.as) {
+      if (!tuple.add(this.as, value)) {
+        return context.error(`panic: resolve: duplicate field '${this.as}' in tuple '${tuple.tag}'`);
+      }
+    }
+  }
+}
+
+/*
+class MapSymTask extends Task {
+  constructor(
+    private ref: RefNode,
+    private as: RefNode,
+    private mapping: TupleNode,
+    private context: BlockContext,
+    private tuple: TupleNode
+  ) {}
+  runTask() {
+    if (value.type !== 'Symbol') {
+      return context.error(`map-sym: ref '${this.ref}' in tuple '${tuple.tag}' is not a Symbol`);
+    }
+    const result = this.mapping.get(value.name);
+    if (result == null) {
+      return context.error(`map-sym: value '${value.name}' not found in the symbol mapping`);
+    }
+  }
+}
+*/
+
+export class MapSymOp {
+  type: '@MapSymOp' = '@MapSymOp';
+  ref: string;
+  as: string;
+  mapping: TupleNode;
+  constructor(tuple: TupleNode) {
+    this.ref = as_str(tuple.get('ref')); // TODO: dot-path will be as_str_array.
+    this.as = as_str(tuple.get('as'));
+    this.mapping = as_tuple(tuple.get('with'));
+  }
+  apply(context: BlockContext, tuple: TupleNode) {
+    // resolve the ref to a ValueNode in the local context (command|argument-pattern)
+    // TODO: might need to wait for the ref to become resolved.
+    const value = tuple.get(this.ref);
+    if (value == null) {
+      return context.error(`map-sym: ref '${this.ref}' not found in tuple '${tuple.tag}'`);
+    }
+    if (value.type !== 'Symbol') {
+      return context.error(`map-sym: ref '${this.ref}' in tuple '${tuple.tag}' is not a Symbol`);
+    }
+    const result = this.mapping.get(value.name);
+    if (result == null) {
+      return context.error(`map-sym: value '${value.name}' not found in the symbol mapping`);
+    }
+    if (!tuple.add(this.as, result)) {
+      return context.error(`map-sym: duplicate field '${this.as}' in tuple '${tuple.tag}'`);
+    }
+  }
 }
 
 export type DirectTypes = ParamProto|ExpectProto|MatchTextProto|MatchTokenProto|MatchListProto;
 export type DirectList = Array<DirectTypes>;
 export type CollectionTypes = ListOfProto|IndexProto;
-export type OpTypes = AssertProto|ResolveProto;
+export type OpTypes = AssertOp|ResolveOp|MapSymOp;
 export type NamedArgsMap = Map<string, ParamProto>;
 
 export class CommandProto {
@@ -268,8 +407,7 @@ export class CommandProto {
   addTo: Array<string>|null = null;
   notIn: Array<string>|null = null;
   constructor(tuple: TupleNode) {
-    // tuple tag is the command name.
-    this.name = tuple.tag;
+    this.name = as_str(tuple.get('name'));
     console.log(`new CommandProto '${this.name}'`);
     // block.
     if (tuple.has('block')) {
@@ -286,13 +424,11 @@ export class CommandProto {
     parse_direct(tuple, this.direct);
     parse_ops(tuple, this.ops);
     // args.
-    const raw_args = as_index(tuple.get('args'));
-    for (const [name, node] of raw_args.items) {
+    for (const [name, node] of as_map(tuple.get('args'))) {
       this.args.set(name, new ParamProto(as_tuple(node)));
     }
     // collections.
-    const raw_collections = as_index(tuple.get('collections'));
-    for (const [_, node] of raw_collections.items) {
+    for (const [_, node] of as_map(tuple.get('collections'))) {
       const coll = as_tuple(node);
       if (coll.tag === 'index') {
         this.collections.push(new IndexProto(coll));
@@ -317,9 +453,8 @@ export type CommandMap = Map<string, CommandProto>;
 export type CommandSetMap = Map<string, CommandMap>;
 
 export function makeCommands(cmds: ValueNode) {
-  const index: IndexNode = as_index(cmds);
   const res: CommandMap = new Map();
-  for (const [name,node] of index.items) {
+  for (const [name,node] of as_map(cmds)) {
     const tuple = as_tuple(node);
     res.set(name, new CommandProto(tuple));
   }
@@ -328,9 +463,8 @@ export function makeCommands(cmds: ValueNode) {
 
 export function makeCommandSets(cmdSets: ValueNode) {
   console.log("starting makeCommandSets");
-  const index: IndexNode = as_index(cmdSets);
   const res: CommandSetMap = new Map();
-  for (const [name,node] of index.items) {
+  for (const [name,node] of as_map(cmdSets)) {
     const cmds = as_index(as_tuple(node).get('cmds'));
     res.set(name, makeCommands(cmds));
   }
