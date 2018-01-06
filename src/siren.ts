@@ -49,9 +49,9 @@ function compile(filename: string, cmdSets: CommandSetMap, argSet: CommandMap) {
 }
 
 export function command(files: Array<string>) {
-  const cmds = compileCmds('demo/ast.siren');
+  const cmds = compileCmds('demo/ast.do');
   if (files.length < 1) {
-    console.log("usage: siren [in-file]");
+    console.log("usage: commando [in-file]");
     return;
   }
   for (let filename of files) {

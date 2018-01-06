@@ -145,7 +145,7 @@ export function tokenize(text: string, filename: string) {
     const result: Array<Token> = [];
     while (start < text_len) {
       const tok = next();
-      // console.log("tok:", tok);
+      console.log("tok:", tok);
       if (tok) result.push(tok);
     }
     return result;

@@ -57,10 +57,10 @@ end
 cmd-set layer-cmds is
   cmd frame is
     direct id of word
-    arg left of slot-and-ofs required
-    arg top of slot-and-ofs required
-    arg right of slot-and-ofs required
-    arg bottom of slot-and-ofs required
+    arg left of frame-anchor required
+    arg top of frame-anchor required
+    arg right of frame-anchor required
+    arg bottom of frame-anchor required
     block is cmds layer-cmds with frame-ids, slot-ids, scripts add-to frames, frame-ids
     list-of frames
   end
@@ -68,43 +68,43 @@ cmd-set layer-cmds is
     direct id of word
     arg asset of word required
     arg shape of word
-    arg left of slot-and-ofs required
-    arg top of slot-and-ofs required
+    arg left of frame-anchor required
+    arg top of frame-anchor required
   end
   cmd nine-patch is
     direct id of word
     arg asset of word required
     arg shape of word required
-    arg left of slot-and-ofs required
-    arg top of slot-and-ofs required
-    arg right of slot-and-ofs required
-    arg bottom of slot-and-ofs required
+    arg left of frame-anchor required
+    arg top of frame-anchor required
+    arg right of frame-anchor required
+    arg bottom of frame-anchor required
   end
   cmd frame-host is
     direct id of word
     arg panel of word required
-    arg left of slot-and-ofs required
-    arg top of slot-and-ofs required
-    arg right of slot-and-ofs required
-    arg bottom of slot-and-ofs required
+    arg left of frame-anchor required
+    arg top of frame-anchor required
+    arg right of frame-anchor required
+    arg bottom of frame-anchor required
   end
   cmd tab-strip is
     direct id of word
     arg of of word required
-    arg left of slot-and-ofs required
-    arg top of slot-and-ofs required
-    arg right of slot-and-ofs required
-    arg bottom of slot-and-ofs required
+    arg left of frame-anchor required
+    arg top of frame-anchor required
+    arg right of frame-anchor required
+    arg bottom of frame-anchor required
     block is cmds tab-strip-cmds add-to tabs
     list-of tabs
   end
   cmd use-frame is
     direct id of word
     arg part of word required
-    arg left of slot-and-ofs required
-    arg top of slot-and-ofs required
-    arg right of slot-and-ofs required
-    arg bottom of slot-and-ofs required
+    arg left of frame-anchor required
+    arg top of frame-anchor required
+    arg right of frame-anchor required
+    arg bottom of frame-anchor required
   end
 end
 
@@ -126,19 +126,16 @@ end
 
 pattern menu-index is
   direct menu of number
-  expect ":"
+  expect ","
   direct index of number
 end
 
-pattern slot-and-ofs is
-  direct slot of num-slot -- TODO: anchor or num-slot ?
-  match "+" one-of pm is
-    direct ofs of number
-  end
-  match "-" one-of pm is
-    direct ofs of number
-    -- TODO: negate ofs
-  end
+pattern frame-anchor is
+  direct frame of word
+  expect ","
+  direct anchor of word
+  expect ","
+  direct ofs of number
 end
 
 pattern as-temp-inst from slot is -- not deferred
@@ -353,5 +350,4 @@ cmd-set action-cmds is
     direct from of word
     arg to of word required
   end
-
 end

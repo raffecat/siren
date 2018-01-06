@@ -1,0 +1,107 @@
+
+http://www.libpng.org/pub/png/spec/1.2/PNG-Chunks.html
+
+     Signature:
+
+     137  80  78  71  13  10  26  10
+
+
+     Name  Multiple  Ordering constraints
+
+     IHDR    No      Must be first
+
+     tIME    No      None
+     iTXt    Yes     None
+     tEXt    Yes     None
+     zTXt    Yes     None
+
+     cHRM    No      Before PLTE and IDAT
+     gAMA    No      Before PLTE and IDAT
+     iCCP    No      Before PLTE and IDAT
+     sBIT    No      Before PLTE and IDAT
+     sRGB    No      Before PLTE and IDAT
+
+     PLTE    No      Before IDAT
+     pHYs    No      Before IDAT
+     sPLT    Yes     Before IDAT
+
+     bKGD    No      After PLTE; before IDAT
+     hIST    No      After PLTE; before IDAT
+     tRNS    No      After PLTE; before IDAT
+
+     IDAT    Yes     Multiple IDATs must be consecutive
+     IEND    No      Must be last
+
+
+IHDR
+- must be first; required; limit 1
+
+IEND
+- must be last; required; limit 1
+
+PLTE
+- required if colour-type 3, optional for 2 & 6 (hint palette)
+- valid before IDAT, limit 1
+- RGB x 8-bit value
+- size cannot exceed image bit depth
+- can be fewer than bit depth; out of bounds pixel is an error
+
+tRNS:
+- valid after PLTE, before IDAT
+- colour-type 3:
+  - one byte alpha for each palette entry (zip with palette)
+  - can be fewer than the palette (pad with 255)
+- colour-type 0:
+  - single 16-bit value (lower bits significant)
+- colour-type 2:
+  - RGB x 16-bit value (lower bits significant)
+
+gAMA:
+- uint32: gamma * 100000
+- does not affect alpha
+- valid before PLTE and IDAT
+- ignored if sRGB or iCCP present
+
+cHRM:
+- valid before PLTE and IDAT
+- ignored if sRGB or iCCP present
+
+sRGB:
+- indicates sRGB colour space; implies gAMA = 45455
+- valid before PLTE and IDAT
+- overrides gAMA, cHRM
+- one of sRGB or iCCP
+- one byte rendering intent (0-3; typically 0 = perceptual)
+
+iCCP:
+- valid before PLTE and IDAT
+- overrides gAMA, cHRM
+- one of sRGB or iCCP
+
+iTXt:
+tEXt:
+zTXt:
+- text chunks
+- can repeat
+
+bKGD:
+- suggested background colour
+- 3: palette index byte; 0,4: 16-bit; 2,6: 3 x 16-bit
+- before IDAT, after PLTE
+
+pHYs:
+- u32,u32: pixels per unit
+- unit byte: 0 -> aspect ratio; 1 -> size in meters
+
+sBIT:
+- significant bits; can ignore
+- valid before PLTE and IDAT
+
+sPLT:
+- suggested palette (named)
+
+hIST:
+- histogram
+
+tIME:
+- last modified time
